@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vue3 互動式題庫系統</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4"
+        crossorigin="anonymous"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
@@ -175,23 +177,6 @@
                     <button class="btn btn-success" v-if="currentIndex === questions.length - 1"
                         @click="finishQuiz">提交答案</button>
                     <button class="btn btn-primary" v-else @click="nextQuestion">下一題</button>
-                </div>
-                <div class="d-grid gap-2 mt-4">
-                    <button v-if="!hasChecked" class="btn btn-warning py-2 fw-bold shadow-sm" @click="checkAnswer">
-                        檢查答案
-                        <span class="ms-2">
-                            <kbd class="bg-dark bg-opacity-10 text-dark border-secondary small">Enter</kbd>
-                            <kbd class="bg-dark bg-opacity-10 text-dark border-secondary small">Space</kbd>
-                        </span>
-                    </button>
-
-                    <button v-else class="btn btn-primary py-2 fw-bold shadow-sm"
-                        @click="currentIndex < questions.length - 1 ? nextQuestion() : finishQuiz()">
-                        {{ currentIndex < questions.length - 1 ? '下一題' : '看結果' }} <span class="ms-2">
-                            <kbd class="bg-white bg-opacity-25 border-white small">Enter</kbd>
-                            <kbd class="bg-white bg-opacity-25 border-white small">Space</kbd>
-                            </span>
-                    </button>
                 </div>
             </div>
 
@@ -460,7 +445,7 @@
                     currentQuestion, userSelection,
                     handleJsonImport, toggleSelection, startQuiz, hasChecked,
                     nextQuestion, prevQuestion, finishQuiz, checkAnswer, checkCurrentAnswer, isCurrentChecked, getQuestionStatusClass,
-                    correctCount, scorePercentage, wrongQuestions, scoreClass, resetQuiz, getOptionClass, handleKeyUp, handleNextStep,
+                    correctCount, scorePercentage, wrongQuestions, scoreClass, resetQuiz, getOptionClass, handleKeyUp, handleNextStep,isLastQuestion
                 };
             }
         }).mount('#app');
