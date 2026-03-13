@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vue3 互動式題庫系統</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* 修改選項的基本樣式與點擊效果 */
+        .list-group-item {
+            cursor: pointer;
+            border: 2px solid #eee !important;
+        }
+
+        /* 使用者選取時的樣式 (檢查答案前) */
+        .selected-option {
+            border-color: #0d6efd !important;
+            background-color: #f0f7ff !important;
+            transform: translateX(5px);
+        }
+
+        /* 檢查答案後的配色邏輯 */
+        .is-correct {
+            background-color: #d1e7dd !important;
+            /* 綠色背景 */
+            border-color: #198754 !important;
+            color: #0f5132;
+        }
+
+        .is-wrong {
+            background-color: #f8d7da !important;
+            /* 紅色背景 */
+            border-color: #dc3545 !important;
+            color: #842029;
+        }
+
+        .is-missed {
+            border-color: #ffc107 !important;
+            /* 黃色邊框提醒漏選 */
+            background-color: #fff3cd !important;
+            border-style: dashed !important;
+        }
+
+        /* 已檢查後禁止所有 hover 動畫 */
+        .has-checked-state {
+            pointer-events: none;
+        }
+
+        /* 當前題號的呼吸燈效果 */
+        .border-dark.shadow {
+            animation: pulse-border 2s infinite;
+            font-weight: bold;
+        }
+
+        @keyframes pulse-border {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(0, 123, 255, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
+            }
+        }
+
+        /* 讓已答對/答錯的按鈕顏色更柔和 */
+        .btn-success {
+            background-color: #28a745 !important;
+        }
+
+        .btn-danger {
+            background-color: #dc3545 !important;
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+
+    <div id="app" class="container quiz-container">
+        <div class="modal fade" id="questionMapModal" tabindex="-1" aria-labelledby="questionMapModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="questionMapModalLabel fw-bold">測驗進度總覽</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex gap-3 mb-4 small justify-content-center border-bottom pb-3">
+                            <span><span class="badge bg-secondary text-white">#</span> 未檢查</span>
+                            <span><span class="badge bg-success text-white">#</span> 答對</span>
+                            <span><span class="badge bg-danger text-white">#</span> 答錯</span>
+                            <span><span class="badge border border-primary text-primary">#</span> 當前所在</span>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                            <button v-for="(q, index) in questions" :key="index"
+                                class="btn rounded-circle d-flex align-items-center justify-content-center p-0"
+                                style="width: 40px; height: 40px; font-size: 0.9rem;"
+                                :class="getQuestionStatusClass(index)" data-bs-dismiss="modal"
+                                @click="currentIndex = index">
+                                {{ index + 1 }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">關閉</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card shadow-sm p-4">
+            <h2 class="text-center mb-4">📝 多選題測驗系統</h2>
+
+            <div v-if="!quizStarted && !showResult" class="text-center">
+                <div class="mb-3">
+                    <label class="form-label">請選擇題庫 json 檔案</label>
+                    <input type="file" class="form-control" accept=".json" @change="handleJsonImport">
+                </div>
+                <button class="btn btn-primary w-100" :disabled="questions.length === 0" @click="startQuiz">
+                    開始測驗 (共 {{ questions.length }} 題)
+                </button>
+
+            </div>
+
+            <div v-if="quizStarted && !showResult">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="badge bg-secondary">第 {{ currentIndex + 1 }} / {{ questions.length }} 題</span>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+                        data-bs-target="#questionMapModal">
+                        <i class="bi bi-grid-3x3-gap-fill"></i> 題目清單
+                    </button>
+                </div>
+
+                <h4 class="mb-4">{{ currentQuestion.title }}</h4>
+                <div v-if="currentQuestion.image" class="text-center mb-4">
+                    <img :src="currentQuestion.image" class="img-fluid rounded shadow-sm border"
+                        style="max-height: 300px;" alt="題目附圖">
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-danger"
+                            @click="currentQuestion.image = null">移除圖片</button>
+                    </div>
+                </div>
+                <div class="list-group mb-4">
+                    <div v-for="(content, label, index) in currentQuestion.options" :key="label"
+                        class="list-group-item d-flex align-items-center py-3 mb-2 rounded border shadow-sm"
+                        :class="getOptionClass(label)" @click="!isCurrentChecked && toggleSelection(label)"> <kbd
+                            class="me-3">{{ index + 1 }}</kbd>
+                        <div class="fw-bold">({{ label }}) {{ content }}</div>
+
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button v-if="!isCurrentChecked" class="btn btn-warning py-2 fw-bold"
+                            @click="checkCurrentAnswer">
+                            檢查答案 <kbd class="ms-2">Space</kbd>
+                        </button>
+
+                        <button v-else class="btn btn-primary py-2 fw-bold" @click="handleNextStep">
+                            {{ isLastQuestion ? '看結果' : '下一題' }} <kbd class="ms-2">Space</kbd>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <button class="btn btn-outline-secondary" @click="prevQuestion"
+                        :disabled="currentIndex === 0">上一題</button>
+                    <button class="btn btn-success" v-if="currentIndex === questions.length - 1"
+                        @click="finishQuiz">提交答案</button>
+                    <button class="btn btn-primary" v-else @click="nextQuestion">下一題</button>
+                </div>
+                <div class="d-grid gap-2 mt-4">
+                    <button v-if="!hasChecked" class="btn btn-warning py-2 fw-bold shadow-sm" @click="checkAnswer">
+                        檢查答案
+                        <span class="ms-2">
+                            <kbd class="bg-dark bg-opacity-10 text-dark border-secondary small">Enter</kbd>
+                            <kbd class="bg-dark bg-opacity-10 text-dark border-secondary small">Space</kbd>
+                        </span>
+                    </button>
+
+                    <button v-else class="btn btn-primary py-2 fw-bold shadow-sm"
+                        @click="currentIndex < questions.length - 1 ? nextQuestion() : finishQuiz()">
+                        {{ currentIndex < questions.length - 1 ? '下一題' : '看結果' }} <span class="ms-2">
+                            <kbd class="bg-white bg-opacity-25 border-white small">Enter</kbd>
+                            <kbd class="bg-white bg-opacity-25 border-white small">Space</kbd>
+                            </span>
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="showResult">
+                <h3 class="text-center mb-4">測驗結束</h3>
+                <div class="row text-center mb-4">
+                    <div class="col-6">
+                        <div class="p-3 border rounded">
+                            <h5>正確率</h5>
+                            <h2 :class="scoreClass">{{ scorePercentage }}%</h2>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 border rounded">
+                            <h5>答對題數</h5>
+                            <h2>{{ correctCount }} / {{ questions.length }}</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="mb-3">錯題分析：</h5>
+                <div v-if="wrongQuestions.length === 0" class="alert alert-success">太棒了！全部答對！</div>
+                <div v-for="(item, index) in wrongQuestions" :key="index" class="card mb-3 border-danger">
+                    <div class="card-body">
+                        <h6 class="card-title">{{ item.title }}</h6>
+                        <p class="mb-1">您的答案：<span class="wrong-text">{{ item.userAns.join(',') }}</span></p>
+                        <p class="mb-1">正確答案：<span class="correct-text">{{ item.correctAns.join(',') }}</span></p>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary w-100 mt-3" @click="resetQuiz">重新開始</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const questions = ref([]);
+                const currentIndex = ref(0);
+                const userAnswers = ref([]); // 儲存每一題的選擇內容
+                const quizStarted = ref(false);
+                const showResult = ref(false);
+                const hasChecked = ref(false); // 標記目前這題是否已顯示答案
+
+                // 當前題目邏輯
+                const currentQuestion = computed(() => questions.value[currentIndex.value]);
+                const userSelection = computed(() => userAnswers.value[currentIndex.value] || []);
+
+                // 處理檔案上傳
+                // const handleFileUpload = (event) => {
+                //     const file = event.target.files[0];
+                //     if (!file) return;
+
+                //     Papa.parse(file, {
+                //         header: true,
+                //         skipEmptyLines: true,
+                //         complete: (results) => {
+                //             // 轉換資料格式
+                //             questions.value = results.data.map(row => ({
+                //                 title: row['題目'],
+                //                 A: row['選項A'],
+                //                 B: row['選項B'],
+                //                 C: row['選項C'],
+                //                 D: row['選項D'],
+                //                 answer: row['正確答案'].split(',').map(s => s.trim().toUpperCase()).sort()
+                //             }));
+                //             userAnswers.value = new Array(questions.value.length).fill(null).map(() => []);
+                //         }
+                //     });
+                // };
+                const checkAnswer = () => { hasChecked.value = true; };
+
+                const getOptionClass = (key) => {
+                    const selected = userSelection.value.includes(key);
+                    const isAns = currentQuestion.value.answer.includes(key);
+
+                    // 如果還沒檢查答案，只顯示「選中」樣式
+                    if (!currentQuestion.value.checked) {
+                        return { 'selected-option': selected };
+                    }
+
+                    // 檢查答案後的邏輯
+                    let classes = ['has-checked-state'];
+                    if (selected && isAns) classes.push('is-correct');
+                    else if (selected && !isAns) classes.push('is-wrong');
+                    else if (!selected && isAns) classes.push('is-missed');
+                    else classes.push('text-muted opacity-50');
+
+                    return classes;
+                };
+
+                const handleKeyUp = (event) => {
+                    const isInput = ['INPUT', 'TEXTAREA'].includes(event.target.tagName);
+                    if (isInput || !quizStarted.value || showResult.value) return;
+
+                    const key = event.key;
+
+                    // 數字鍵：僅在「未檢查」時允許切換選項
+                    if (/^[1-9]$/.test(key) && !isCurrentChecked.value) {
+                        const index = parseInt(key) - 1;
+                        const labels = Object.keys(currentQuestion.value.options);
+                        if (index < labels.length) toggleSelection(labels[index]);
+                    }
+
+                    // Enter / Space 邏輯
+                    if (key === 'Enter' || key === ' ') {
+                        event.preventDefault();
+                        if (!isCurrentChecked.value) {
+                            checkCurrentAnswer();
+                        } else {
+                            handleNextStep();
+                        }
+                    }
+                };
+                const toggleSelection = (key) => {
+                    const selections = [...userSelection.value];
+                    const index = selections.indexOf(key);
+                    if (index > -1) selections.splice(index, 1);
+                    else selections.push(key);
+                    userAnswers.value[currentIndex.value] = selections.sort();
+                };
+
+                const startQuiz = () => quizStarted.value = true;
+                const nextQuestion = () => currentIndex.value++;
+                const prevQuestion = () => currentIndex.value--;
+
+                // 統計資料
+                const resultData = computed(() => {
+                    let correct = 0;
+                    let wrongs = [];
+
+                    questions.value.forEach((q, index) => {
+                        const uAns = userAnswers.value[index].sort();
+                        const isCorrect = JSON.stringify(uAns) === JSON.stringify(q.answer);
+
+                        if (isCorrect) {
+                            correct++;
+                        } else {
+                            wrongs.push({
+                                title: q.title,
+                                userAns: uAns,
+                                correctAns: q.answer
+                            });
+                        }
+                    });
+
+                    return { correct, wrongs };
+                });
+
+                const correctCount = computed(() => resultData.value.correct);
+                const scorePercentage = computed(() => Math.round((correctCount.value / questions.value.length) * 100));
+                const wrongQuestions = computed(() => resultData.value.wrongs);
+                const scoreClass = computed(() => scorePercentage.value >= 60 ? 'text-success' : 'text-danger');
+
+                // 修改檢查答案的函式
+                const checkCurrentAnswer = () => {
+                    // 改為修改當前題目物件內的 checked 屬性
+                    if (questions.value[currentIndex.value]) {
+                        questions.value[currentIndex.value].checked = true;
+                    }
+                };
+
+                // 計算屬性：獲取當前題目是否已檢查
+                const isCurrentChecked = computed(() => {
+                    return questions.value[currentIndex.value]?.checked || false;
+                });
+
+                const finishQuiz = () => {
+                    quizStarted.value = false;
+                    showResult.value = true;
+                };
+
+                const resetQuiz = () => {
+                    currentIndex.value = 0;
+                    userAnswers.value = new Array(questions.value.length).fill(null).map(() => []);
+                    showResult.value = false;
+                    quizStarted.value = false;
+                };
+
+                const handleJsonImport = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    // 自動去掉副檔名作為檔名 (先前需求)
+                    //exportFileName.value = file.name.replace(/\.[^/.]+$/, "");
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const importedData = JSON.parse(e.target.result);
+
+                            // 驗證是否為陣列
+                            if (Array.isArray(importedData)) {
+                                // 對每一題進行格式清理，確保結構一致
+                                questions.value = importedData.map(q => ({
+                                    title: q.title || "無標題",
+                                    options: q.options || {},
+                                    answer: Array.isArray(q.answer) ? q.answer : [q.answer], // 強制轉為陣列
+                                    image: q.image || null, // 若無圖片則設為 null
+                                    checked: false // ✨ 每題獨立的檢查狀態
+                                }));
+
+                                alert(`成功匯入 ${questions.value.length} 題！`);
+                                resetQuiz(); // 重置測驗狀態
+                            }
+                        } catch (err) {
+                            alert("JSON 格式不正確，請檢查檔案內容。");
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+                const isLastQuestion = computed(() => {
+                    // 記得檢查 questions.value 是否存在，避免讀取長度錯誤
+                    return questions.value.length > 0 && currentIndex.value === questions.value.length - 1;
+                });
+
+                const handleNextStep = () => {
+                    if (isLastQuestion.value) {
+                        // 如果是最後一題，執行顯示結果的邏輯
+                        finishQuiz();
+                    } else {
+                        // 如果不是最後一題，移動到下一題
+                        currentIndex.value++;
+                        // 切換題目後，視窗自動捲動到頂部（提升體驗）
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                };
+
+                const getQuestionStatusClass = (index) => {
+                    const q = questions.value[index];
+                    const isCurrent = currentIndex.value === index;
+
+                    // 基本樣式：如果是當前題目，加上邊框突出
+                    let classes = isCurrent ? 'border-dark border-2 shadow ' : 'border-light ';
+
+                    // 狀態 1：尚未檢查
+                    if (!q.checked) {
+                        return classes + 'btn-outline-secondary';
+                    }
+
+                    // 狀態 2：已檢查，判斷對錯
+                    const uAns = (userAnswers.value[index] || []).sort().join('');
+                    const cAns = (q.answer || []).sort().join('');
+
+                    if (uAns === cAns) {
+                        return classes + 'btn-success text-white'; // 答對顯示綠色
+                    } else {
+                        return classes + 'btn-danger text-white';  // 答錯顯示紅色
+                    }
+                };
+
+                // 4. 生命週期掛載
+                onMounted(() => {
+                    window.addEventListener('keyup', handleKeyUp);
+                });
+
+                onUnmounted(() => {
+                    window.removeEventListener('keyup', handleKeyUp);
+                });
+
+                return {
+                    questions, currentIndex, quizStarted, showResult,
+                    currentQuestion, userSelection,
+                    handleJsonImport, toggleSelection, startQuiz, hasChecked,
+                    nextQuestion, prevQuestion, finishQuiz, checkAnswer, checkCurrentAnswer, isCurrentChecked, getQuestionStatusClass,
+                    correctCount, scorePercentage, wrongQuestions, scoreClass, resetQuiz, getOptionClass, handleKeyUp, handleNextStep,
+                };
+            }
+        }).mount('#app');
+    </script>
+
+</body>
+
+</html>
