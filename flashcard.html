@@ -6,6 +6,7 @@
     <title>互動式字卡學習系統</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #f8f9fa; }
         .flashcard {
@@ -24,7 +25,6 @@
             padding: 0.4em 0.6em;
         }
         .keyboard-hint { font-size: 0.8rem; color: #6c757d; }
-        /* 避免 textarea 換行顯示問題 */
         textarea { white-space: pre-wrap; }
     </style>
 </head>
@@ -59,7 +59,16 @@
                 </div>
             </div>
 
-            <div class="card mb-4">
+            <div class="card mb-4 shadow-sm" v-show="cards.length > 0">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">📊 題庫熟練度分佈</h5>
+                    <div style="max-width: 300px; margin: 0 auto;">
+                        <canvas id="statsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4 shadow-sm">
                 <div class="card-body">
                     <h5 class="card-title">資料匯入</h5>
                     <p class="text-muted small">支援無標題 CSV（正面, 反面, V）或本系統匯出的 JSON 檔</p>
@@ -67,7 +76,7 @@
                 </div>
             </div>
             
-            <button class="btn btn-outline-secondary w-100" @click="exportJSON" :disabled="cards.length === 0">匯出學習進度 (JSON)</button>
+            <button class="btn btn-outline-secondary w-100 py-2" @click="exportJSON" :disabled="cards.length === 0">💾 匯出目前進度 (JSON)</button>
         </div>
     </div>
 
@@ -75,7 +84,7 @@
         <div class="col-12">
             <div class="d-flex justify-content-between mb-3">
                 <h4>字卡列表</h4>
-                <button class="btn btn-success" @click="openEditModal(null)">新增字卡</button>
+                <button class="btn btn-success" @click="openEditModal(null)">+ 新增字卡</button>
             </div>
             <table class="table table-hover bg-white shadow-sm rounded">
                 <thead>
@@ -103,46 +112,101 @@
 
     <div v-show="currentView === 'study'" class="row justify-content-center">
         <div class="col-md-8" v-if="practiceQueue.length > 0">
-            <div class="d-flex justify-content-between mb-2">
-                <span class="text-muted">進度: {{ currentIndex + 1 }} / {{ practiceQueue.length }}</span>
-                <span class="text-danger fw-bold" v-if="alertMessage">{{ alertMessage }}</span>
-            </div>
-            <div class="progress mb-4" style="height: 5px;">
-                <div class="progress-bar" :style="{ width: ((currentIndex + 1) / practiceQueue.length) * 100 + '%' }"></div>
-            </div>
+            
+            <div v-if="!isPracticeFinished">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">進度: {{ currentIndex + 1 }} / {{ practiceQueue.length }}</span>
+                    <span class="text-danger fw-bold" v-if="alertMessage">{{ alertMessage }}</span>
+                </div>
+                <div class="progress mb-4" style="height: 5px;">
+                    <div class="progress-bar" :style="{ width: ((currentIndex + 1) / practiceQueue.length) * 100 + '%' }"></div>
+                </div>
 
-            <div class="card flashcard shadow" @click="flipCard">
-                <div class="card-body text-center d-flex align-items-center justify-content-center w-100">
-                    <div v-html="renderedCardContent" style="white-space: pre-wrap; word-break: break-word;"></div>
+                <div class="card flashcard shadow" @click="flipCard">
+                    <div class="card-body text-center d-flex align-items-center justify-content-center w-100">
+                        <div v-html="renderedCardContent" style="white-space: pre-wrap; word-break: break-word;"></div>
+                    </div>
+                </div>
+
+                <div class="text-center mt-4">
+                    <p class="keyboard-hint mb-3">鍵盤快捷鍵：[Space] 翻牌 | [←] 上一題 | [→] 下一題 | [1-4] 評分</p>
+                    
+                    <div v-if="!isFlipped">
+                        <button class="btn btn-primary btn-lg px-5" @click="flipCard">翻開答案 (Space)</button>
+                    </div>
+                    
+                    <div v-else class="btn-group w-100 shadow-sm" role="group">
+                        <button class="btn btn-outline-danger py-3" @click="rateCard('forgot')">
+                            忘記 <br><small class="keyboard-hint">[1]</small>
+                        </button>
+                        <button class="btn btn-outline-warning py-3" @click="rateCard('fuzzy')">
+                            模糊 <br><small class="keyboard-hint">[2]</small>
+                        </button>
+                        <button class="btn btn-outline-success py-3" @click="rateCard('good')">
+                            好 <br><small class="keyboard-hint">[3]</small>
+                        </button>
+                        <button class="btn btn-outline-info py-3" @click="rateCard('easy')">
+                            簡單 <br><small class="keyboard-hint">[4]</small>
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div class="text-center mt-4">
-                <p class="keyboard-hint mb-3">鍵盤快捷鍵：[Space] 翻牌 | [←] 上一題 | [→] 下一題 | [1-4] 評分</p>
+            <div v-else class="card p-5 text-center shadow border-0">
+                <h2 class="text-success mb-3">🎉 恭喜完成本次練習！</h2>
+                <p class="text-muted mb-4">您已完成了設定的 {{ practiceQueue.length }} 題字卡複習。</p>
                 
-                <div v-if="!isFlipped">
-                    <button class="btn btn-primary btn-lg px-5" @click="flipCard">翻開答案 (Space)</button>
-                </div>
-                
-                <div v-else class="btn-group w-100 shadow-sm" role="group">
-                    <button class="btn btn-outline-danger py-3" @click="rateCard('forgot')">
-                        忘記 <br><small class="keyboard-hint">[1]</small>
-                    </button>
-                    <button class="btn btn-outline-warning py-3" @click="rateCard('fuzzy')">
-                        模糊 <br><small class="keyboard-hint">[2]</small>
-                    </button>
-                    <button class="btn btn-outline-success py-3" @click="rateCard('good')">
-                        好 <br><small class="keyboard-hint">[3]</small>
-                    </button>
-                    <button class="btn btn-outline-info py-3" @click="rateCard('easy')">
-                        簡單 <br><small class="keyboard-hint">[4]</small>
-                    </button>
+                <div class="row g-3 justify-content-center">
+                    <div class="col-sm-6">
+                        <button class="btn btn-primary w-100 py-2" @click="resetToSetup">
+                            🔄 再練習一次 (調整條件)
+                        </button>
+                    </div>
+                    <div class="col-sm-6">
+                        <button class="btn btn-outline-primary w-100 py-2" @click="currentView = 'home'">
+                            🏠 回首頁查看最新統計
+                        </button>
+                    </div>
+                    <div class="col-sm-6 offset-sm-3 mt-3">
+                        <button class="btn btn-outline-secondary w-100 py-2" @click="exportJSON">
+                            💾 立即匯出進度 (JSON)
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
+        
         <div class="col-md-8 text-center" v-else>
-            <div class="alert alert-info">目前沒有需要複習的字卡。</div>
-            <button class="btn btn-primary" @click="initPractice">重新載入題庫</button>
+            <div class="card p-4 shadow-sm border-0">
+                <h4 class="mb-4">🎯 調整練習條件</h4>
+                
+                <div class="mb-3 d-flex justify-content-center align-items-center gap-2">
+                    <label class="form-label mb-0 fw-bold" style="white-space: nowrap; width: 120px;">選擇練習題數：</label>
+                    <select class="form-select w-50" v-model="practiceCountLimit">
+                        <option value="all">全部題目 (共 {{ cards.length }} 題)</option>
+                        <option value="10">隨機抽 10 題</option>
+                        <option value="20">隨機抽 20 題</option>
+                        <option value="40">隨機抽 40 題</option>
+                        <option value="50">隨機抽 50 題</option>
+                    </select>
+                </div>
+
+                <div class="mb-4 d-flex justify-content-center align-items-center gap-2">
+                    <label class="form-label mb-0 fw-bold" style="white-space: nowrap; width: 120px;">篩選評分項目：</label>
+                    <select class="form-select w-50" v-model="practiceRatingFilter">
+                        <option value="all">不限狀態 (全部包含)</option>
+                        <option value="unrated">尚未練習的題目</option>
+                        <option value="forgot">上次評分：忘記 ❌</option>
+                        <option value="fuzzy">上次評分：模糊 ⚠️</option>
+                        <option value="good">上次評分：好  👍</option>
+                        <option value="easy">上次評分：簡單 ✨</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary btn-lg w-50 mx-auto" @click="initPractice">
+                    🚀 開始練習
+                </button>
+            </div>
         </div>
     </div>
 
@@ -166,19 +230,16 @@
 
                     <div class="mb-4 p-3 bg-light rounded border">
                         <label class="form-label"><strong>背面答案列表 (依序對應挖空位置)</strong></label>
-                        
                         <div v-if="editingCard.backArray.length === 0" class="text-muted small mb-2">
                             目前沒有答案。請使用自動挖空，或手動新增。
                         </div>
-
                         <div v-for="(answer, index) in editingCard.backArray" :key="index" class="input-group mb-2">
                             <span class="input-group-text">{{ index + 1 }}</span>
                             <input type="text" class="form-control" v-model="editingCard.backArray[index]" placeholder="輸入此挖空的答案">
                             <button class="btn btn-outline-danger" type="button" @click="removeAnswer(index)">刪除</button>
                         </div>
-
                         <button class="btn btn-sm btn-secondary mt-2" @click="editingCard.backArray.push('')">
-                            + 手動新增一個答案
+                            + 手動新增答案
                         </button>
                     </div>
 
@@ -200,7 +261,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-const { createApp, ref, computed, onMounted, onUnmounted, reactive } = Vue;
+const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch, nextTick } = Vue;
 
 createApp({
     setup() {
@@ -210,12 +271,16 @@ createApp({
         const alertMessage = ref('');
         const fileInput = ref(null);
         let editModalInstance = null;
+        let chartInstance = null;
 
-        // 練習狀態
+        // 練習與篩選狀態
         const practiceQueue = ref([]);
         const currentIndex = ref(0);
         const isFlipped = ref(false);
         const hasRated = ref(false);
+        const isPracticeFinished = ref(false);
+        const practiceCountLimit = ref('all');
+        const practiceRatingFilter = ref('all');
 
         // 編輯狀態
         const editingCard = reactive({ id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
@@ -224,20 +289,22 @@ createApp({
         const importantCount = computed(() => cards.value.filter(c => c.isImportant).length);
         const currentCard = computed(() => practiceQueue.value[currentIndex.value] || null);
         
-        // 渲染挖空遮罩邏輯 (考慮換行)
+        // 渲染遮罩與 HTML 轉義防 XSS
+        const escapeHTML = (str) => {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag])
+            );
+        };
+
         const renderedCardContent = computed(() => {
             if (!currentCard.value) return '';
             const front = currentCard.value.front || '';
             const backArr = currentCard.value.backArray || [];
-            
-            // 透過 ___ 分割題目
             const parts = front.split('___');
             let html = '';
             
             for (let i = 0; i < parts.length; i++) {
-                // 將內容直接推入 (CSS 已經設定 white-space: pre-wrap，故不需手動替換 <br>)
                 html += escapeHTML(parts[i]);
-                
                 if (i < parts.length - 1) {
                     if (!isFlipped.value) {
                         html += '<span class="badge bg-secondary cloze-badge mx-1 shadow-sm"><i class="bi bi-question">?</i></span>';
@@ -250,138 +317,145 @@ createApp({
             return html;
         });
 
-        // 簡單的 HTML 轉義防 XSS，同時保持排版
-        const escapeHTML = (str) => {
-            return str.replace(/[&<>'"]/g, 
-                tag => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    "'": '&#39;',
-                    '"': '&quot;'
-                }[tag])
-            );
-        };
-
         const showAlert = (msg) => {
             alertMessage.value = msg;
             setTimeout(() => alertMessage.value = '', 2000);
         };
 
-        // --- 檔案處理 (CSV / JSON) ---
+        // --- 圖表更新邏輯 ---
+        const updateChart = () => {
+            const ctx = document.getElementById('statsChart');
+            if (!ctx) return;
+
+            let stats = { forgot: 0, fuzzy: 0, good: 0, easy: 0, unrated: 0 };
+            cards.value.forEach(c => {
+                if (c.lastRating) stats[c.lastRating]++;
+                else stats.unrated++;
+            });
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['忘記 ❌', '模糊 ⚠️', '好 👍', '簡單 ✨', '未練習 🆕'],
+                    datasets: [{
+                        data: [stats.forgot, stats.fuzzy, stats.good, stats.easy, stats.unrated],
+                        backgroundColor: ['#dc3545', '#ffc107', '#198754', '#0dcaf0', '#6c757d']
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            });
+        };
+
+        watch(currentView, (newView) => {
+            if (newView === 'home' && cards.value.length > 0) {
+                nextTick(() => updateChart());
+            }
+        });
+
+        // --- 檔案處理 ---
+        const parseCSVString = (str) => {
+            const result = [];
+            let row = [], col = '', inQuotes = false;
+            for (let i = 0; i < str.length; i++) {
+                let char = str[i];
+                if (char === '"' && str[i+1] === '"') { col += '"'; i++; }
+                else if (char === '"') { inQuotes = !inQuotes; }
+                else if (char === ',' && !inQuotes) { row.push(col); col = ''; }
+                else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    if (char === '\r' && str[i+1] === '\n') i++; 
+                    row.push(col); result.push(row); row = []; col = '';
+                } else { col += char; }
+            }
+            if (col || row.length > 0) { row.push(col); result.push(row); }
+            return result;
+        };
+
         const handleFileUpload = (event) => {
             const file = event.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = (e) => {
                 const content = e.target.result;
                 if (file.name.endsWith('.json')) {
                     try {
                         const data = JSON.parse(content);
-                        if (data.cards) cards.value = data.cards;
-                        alert("JSON 匯入成功！");
+                        if (data.cards) {
+                            cards.value = data.cards;
+                            nextTick(() => updateChart());
+                            alert("JSON 匯入成功！");
+                        }
                     } catch (err) { alert("JSON 格式錯誤"); }
                 } else if (file.name.endsWith('.csv')) {
                     const parsedData = parseCSVString(content);
-                    processCSVData(parsedData);
+                    const newCards = parsedData.map(row => {
+                        if (row.length === 1 && row[0].trim() === '') return null;
+                        return {
+                            id: 'card_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                            front: (row[0] || '').trim(),
+                            backArray: (row[1] || '') ? row[1].split('；').map(s => s.trim()) : [],
+                            isImportant: ((row[2] || '').trim().toUpperCase() === 'V'),
+                            reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 },
+                            lastRating: null
+                        };
+                    }).filter(item => item !== null);
+                    cards.value = [...cards.value, ...newCards];
+                    nextTick(() => updateChart());
                     alert("CSV 匯入成功！");
                 }
-                // 清空 input file 值以支援重複上傳同檔案
                 if(fileInput.value) fileInput.value.value = '';
             };
             reader.readAsText(file);
         };
 
-        // ★ 核心修復：支援 RFC 4180 標準的 CSV 解析 (可處理換行、雙引號)
-        const parseCSVString = (str) => {
-            const result = [];
-            let row = [];
-            let col = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < str.length; i++) {
-                let char = str[i];
-                if (char === '"' && str[i+1] === '"') {
-                    // 跳脫的雙引號
-                    col += '"';
-                    i++;
-                } else if (char === '"') {
-                    // 進入或離開引號模式
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    // 欄位結束
-                    row.push(col);
-                    col = '';
-                } else if ((char === '\n' || char === '\r') && !inQuotes) {
-                    // 行結束
-                    if (char === '\r' && str[i+1] === '\n') i++; // 略過 \r\n
-                    row.push(col);
-                    result.push(row);
-                    row = [];
-                    col = '';
-                } else {
-                    col += char;
-                }
-            }
-            if (col || row.length > 0) {
-                row.push(col);
-                result.push(row);
-            }
-            return result;
-        };
-
-        const processCSVData = (csvMatrix) => {
-            const newCards = csvMatrix.map(row => {
-                // 如果空行則跳過
-                if (row.length === 1 && row[0].trim() === '') return null;
-                
-                const front = row[0] || '';
-                const backStr = row[1] || '';
-                const importantMark = row[2] || '';
-                
-                const backArray = backStr ? backStr.split('；').map(s => s.trim()) : [];
-                return {
-                    id: 'card_' + Date.now() + Math.random().toString(36).substr(2, 5),
-                    front: front.trim(),
-                    backArray: backArray,
-                    isImportant: (importantMark.trim().toUpperCase() === 'V'),
-                    reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 },
-                    lastRating: null
-                };
-            }).filter(item => item !== null);
-
-            cards.value = [...cards.value, ...newCards];
-        };
-
         const exportJSON = () => {
-            const data = {
-                systemVersion: "1.0.1",
-                exportAt: new Date().toISOString(),
-                cards: cards.value
-            };
+            const data = { systemVersion: "1.0.2", exportAt: new Date().toISOString(), cards: cards.value };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = `flashcard_export_${new Date().getTime()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
+            a.href = url; a.download = `flashcards_${new Date().getTime()}.json`;
+            a.click(); URL.revokeObjectURL(url);
         };
 
-        // --- 學習與鍵盤邏輯 ---
+        // --- 練習與控制邏輯 ---
+        const resetToSetup = () => {
+            practiceQueue.value = [];
+            isPracticeFinished.value = false;
+        };
+
         const initPractice = () => {
-            practiceQueue.value = [...cards.value];
+            if (cards.value.length === 0) return;
+            isPracticeFinished.value = false;
+            
+            let filteredCards = [...cards.value];
+            if (practiceRatingFilter.value !== 'all') {
+                if (practiceRatingFilter.value === 'unrated') filteredCards = filteredCards.filter(c => c.lastRating === null);
+                else filteredCards = filteredCards.filter(c => c.lastRating === practiceRatingFilter.value);
+            }
+
+            if (filteredCards.length === 0) {
+                alert("找不到符合該評分條件的字卡，請重新選擇！");
+                return;
+            }
+            
+            for (let i = filteredCards.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [filteredCards[i], filteredCards[j]] = [filteredCards[j], filteredCards[i]];
+            }
+
+            if (practiceCountLimit.value !== 'all') {
+                filteredCards = filteredCards.slice(0, parseInt(practiceCountLimit.value, 10));
+            }
+
+            practiceQueue.value = filteredCards;
             currentIndex.value = 0;
             isFlipped.value = false;
             hasRated.value = false;
         };
 
         const flipCard = () => {
-            if (!isFlipped.value) {
-                isFlipped.value = true;
-                hasRated.value = false;
-            }
+            if (!isFlipped.value) { isFlipped.value = true; hasRated.value = false; }
         };
 
         const rateCard = (rating) => {
@@ -396,47 +470,29 @@ createApp({
         };
 
         const nextCard = () => {
-            if (!isFlipped.value) {
-                showAlert("尚未完成 (請先翻牌)");
-                return;
-            }
-            if (!hasRated.value) {
-                showAlert("請先進行評分");
-                return;
-            }
+            if (!isFlipped.value) return showAlert("尚未完成 (請先翻牌)");
+            if (!hasRated.value) return showAlert("請先進行評分");
             if (currentIndex.value < practiceQueue.value.length - 1) {
-                currentIndex.value++;
-                isFlipped.value = false;
-                hasRated.value = false;
+                currentIndex.value++; isFlipped.value = false; hasRated.value = false;
             } else {
-                showAlert("已經是最後一題！");
+                isPracticeFinished.value = true;
             }
         };
 
         const prevCard = () => {
             if (currentIndex.value > 0) {
-                currentIndex.value--;
-                isFlipped.value = true; 
-                hasRated.value = true; 
+                currentIndex.value--; isFlipped.value = true; hasRated.value = true; 
             }
         };
 
         const handleKeydown = (e) => {
             if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-            if (currentView.value !== 'study' || practiceQueue.value.length === 0) return;
+            if (currentView.value !== 'study' || practiceQueue.value.length === 0 || isPracticeFinished.value) return;
 
             switch(e.key) {
-                case ' ':
-                case 'Spacebar':
-                    e.preventDefault();
-                    flipCard();
-                    break;
-                case 'ArrowRight':
-                    nextCard();
-                    break;
-                case 'ArrowLeft':
-                    prevCard();
-                    break;
+                case ' ': case 'Spacebar': e.preventDefault(); flipCard(); break;
+                case 'ArrowRight': nextCard(); break;
+                case 'ArrowLeft': prevCard(); break;
                 case '1': if (isFlipped.value) rateCard('forgot'); break;
                 case '2': if (isFlipped.value) rateCard('fuzzy'); break;
                 case '3': if (isFlipped.value) rateCard('good'); break;
@@ -444,14 +500,10 @@ createApp({
             }
         };
 
-        // --- CRUD 與 自動挖空 ---
+        // --- CRUD 邏輯 ---
         const openEditModal = (card) => {
-            if (card) {
-                // 深拷貝物件，避免未儲存就污染原資料
-                Object.assign(editingCard, JSON.parse(JSON.stringify(card)));
-            } else {
-                Object.assign(editingCard, { id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
-            }
+            if (card) Object.assign(editingCard, JSON.parse(JSON.stringify(card)));
+            else Object.assign(editingCard, { id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
             editModalInstance.show();
         };
 
@@ -467,59 +519,41 @@ createApp({
         };
 
         const deleteCard = (id) => {
-            if(confirm('確定要刪除這張字卡嗎？')) {
-                cards.value = cards.value.filter(c => c.id !== id);
-            }
+            if(confirm('確定要刪除這張字卡嗎？')) cards.value = cards.value.filter(c => c.id !== id);
         };
 
-        // 新增手動移除陣列元素的函式
-        const removeAnswer = (index) => {
-            editingCard.backArray.splice(index, 1);
-        };
+        const removeAnswer = (index) => editingCard.backArray.splice(index, 1);
 
-        // ★ 核心修復：正確順序的自動挖空
         const createCloze = () => {
             const textarea = document.getElementById('edit-front');
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            
+            const start = textarea.selectionStart, end = textarea.selectionEnd;
             if (start !== end) {
                 const selectedText = editingCard.front.substring(start, end);
                 const before = editingCard.front.substring(0, start);
                 const after = editingCard.front.substring(end);
                 
-                // 計算「被反白文字之前」已經存在幾個 ___，以決定要插入到陣列的哪一個位置
                 const existingClozesBefore = (before.match(/___/g) || []).length;
-
                 editingCard.front = before + '___' + after;
-                
-                // 利用 splice 在對應的位置插入答案，而不是單純 push 到最後面
                 editingCard.backArray.splice(existingClozesBefore, 0, selectedText);
                 
-                // 重新聚焦並重置游標
                 setTimeout(() => {
                     textarea.focus();
                     textarea.setSelectionRange(before.length + 3, before.length + 3);
                 }, 10);
-            } else {
-                alert('請先在輸入框內反白選取要挖空的文字。');
-            }
+            } else alert('請先在輸入框內反白選取要挖空的文字。');
         };
 
         onMounted(() => {
             window.addEventListener('keydown', handleKeydown);
-            editModalInstance = new bootstrap.Modal(document.getElementById('editModal'), {
-                backdrop: 'static' // 防止點擊背景誤關閉導致資料遺失
-            });
+            editModalInstance = new bootstrap.Modal(document.getElementById('editModal'), { backdrop: 'static' });
         });
 
-        onUnmounted(() => {
-            window.removeEventListener('keydown', handleKeydown);
-        });
+        onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
         return {
             currentView, cards, practiceQueue, currentIndex, isFlipped, alertMessage, importantCount, currentCard, renderedCardContent, editingCard, fileInput,
-            handleFileUpload, exportJSON, initPractice, flipCard, rateCard, openEditModal, saveCard, deleteCard, removeAnswer, createCloze
+            isPracticeFinished, practiceCountLimit, practiceRatingFilter,
+            handleFileUpload, exportJSON, initPractice, flipCard, rateCard, openEditModal, saveCard, deleteCard, removeAnswer, createCloze, resetToSetup
         };
     }
 }).mount('#app');
