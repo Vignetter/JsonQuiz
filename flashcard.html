@@ -18,6 +18,7 @@
             font-size: 1.5rem;
             cursor: pointer;
             transition: all 0.3s ease;
+            position: relative;
         }
         .cloze-badge {
             font-size: 1.2rem;
@@ -26,6 +27,12 @@
         }
         .keyboard-hint { font-size: 0.8rem; color: #6c757d; }
         textarea { white-space: pre-wrap; }
+        .important-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -68,41 +75,55 @@
                 </div>
             </div>
 
-            <div class="card mb-4 shadow-sm">
+            <div class="card mb-4 shadow-sm text-start">
                 <div class="card-body">
-                    <h5 class="card-title">資料匯入</h5>
-                    <p class="text-muted small">支援無標題 CSV（正面, 反面, V）或本系統匯出的 JSON 檔</p>
-                    <input class="form-control mb-3" type="file" accept=".csv, .json" @change="handleFileUpload" ref="fileInput">
+                    <h5 class="card-title mb-3">📂 題庫設定與資料匯出</h5>
+                    <div class="input-group mb-4">
+                        <span class="input-group-text fw-bold">題庫名稱</span>
+                        <input type="text" class="form-control" v-model="deckName" placeholder="例如：Vue3 前端面試題庫">
+                        <button class="btn btn-outline-primary" @click="exportJSON" :disabled="cards.length === 0">💾 匯出目前進度 (JSON)</button>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h5 class="card-title mt-4 mb-2">📥 資料匯入</h5>
+                    <p class="text-muted small mb-2">支援無標題 CSV（正面, 反面, V）或本系統匯出的 JSON 檔</p>
+                    <input class="form-control" type="file" accept=".csv, .json" @change="handleFileUpload" ref="fileInput">
                 </div>
             </div>
             
-            <button class="btn btn-outline-secondary w-100 py-2" @click="exportJSON" :disabled="cards.length === 0">💾 匯出目前進度 (JSON)</button>
         </div>
     </div>
 
     <div v-show="currentView === 'manage'" class="row">
         <div class="col-12">
-            <div class="d-flex justify-content-between mb-3">
-                <h4>字卡列表</h4>
-                <button class="btn btn-success" @click="openEditModal(null)">+ 新增字卡</button>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0">字卡列表 ({{ deckName }})</h4>
+                <button class="btn btn-success" @click="openEditModal(null, null)">+ 新增字卡 (至最底)</button>
             </div>
-            <table class="table table-hover bg-white shadow-sm rounded">
-                <thead>
+            <table class="table table-hover bg-white shadow-sm rounded align-middle">
+                <thead class="table-light">
                     <tr>
+                        <th style="width: 50px;">#</th>
                         <th>正面 (題目)</th>
                         <th>背面 (答案陣列)</th>
-                        <th>重點</th>
-                        <th style="width: 150px;">操作</th>
+                        <th style="width: 80px;" class="text-center">重點</th>
+                        <th style="width: 250px;" class="text-center">操作</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="card in cards" :key="card.id">
+                    <tr v-for="(card, index) in cards" :key="card.id">
+                        <td class="text-muted">{{ index + 1 }}</td>
                         <td><div style="white-space: pre-wrap;">{{ card.front }}</div></td>
                         <td>{{ card.backArray.join(', ') }}</td>
-                        <td>{{ card.isImportant ? '✅' : '' }}</td>
+                        <td class="text-center fs-5">{{ card.isImportant ? '⭐' : '' }}</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-primary me-2" @click="openEditModal(card)">編輯</button>
-                            <button class="btn btn-sm btn-outline-danger" @click="deleteCard(card.id)">刪除</button>
+                            <div class="d-flex gap-1 justify-content-center flex-wrap">
+                                <button class="btn btn-sm btn-outline-secondary" @click="openEditModal(null, index)" title="在此題上方插入">🔼</button>
+                                <button class="btn btn-sm btn-outline-primary" @click="openEditModal(card, null)">編輯</button>
+                                <button class="btn btn-sm btn-outline-secondary" @click="openEditModal(null, index + 1)" title="在此題下方插入">🔽</button>
+                                <button class="btn btn-sm btn-outline-danger" @click="deleteCard(card.id)">刪除</button>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
@@ -114,8 +135,11 @@
         <div class="col-md-8" v-if="practiceQueue.length > 0">
             
             <div v-if="!isPracticeFinished">
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">進度: {{ currentIndex + 1 }} / {{ practiceQueue.length }}</span>
+                <div class="d-flex justify-content-between align-items-end mb-2">
+                    <div>
+                        <span class="text-muted me-3">進度: {{ currentIndex + 1 }} / {{ practiceQueue.length }}</span>
+                        <span v-if="currentCard && currentCard.isImportant" class="badge bg-warning text-dark shadow-sm">⭐ 重點題目</span>
+                    </div>
                     <span class="text-danger fw-bold" v-if="alertMessage">{{ alertMessage }}</span>
                 </div>
                 <div class="progress mb-4" style="height: 5px;">
@@ -123,7 +147,10 @@
                 </div>
 
                 <div class="card flashcard shadow" @click="flipCard">
-                    <div class="card-body text-center d-flex align-items-center justify-content-center w-100">
+                    <div v-if="currentCard && currentCard.isImportant" class="important-badge">
+                        <span class="badge rounded-pill text-bg-warning">⭐</span>
+                    </div>
+                    <div class="card-body text-center d-flex align-items-center justify-content-center w-100 mt-3">
                         <div v-html="renderedCardContent" style="white-space: pre-wrap; word-break: break-word;"></div>
                     </div>
                 </div>
@@ -131,23 +158,36 @@
                 <div class="text-center mt-4">
                     <p class="keyboard-hint mb-3">鍵盤快捷鍵：[Space] 翻牌 | [←] 上一題 | [→] 下一題 | [1-4] 評分</p>
                     
-                    <div v-if="!isFlipped">
+                    <div v-if="!currentCardState.isFlipped">
                         <button class="btn btn-primary btn-lg px-5" @click="flipCard">翻開答案 (Space)</button>
                     </div>
                     
-                    <div v-else class="btn-group w-100 shadow-sm" role="group">
-                        <button class="btn btn-outline-danger py-3" @click="rateCard('forgot')">
-                            忘記 <br><small class="keyboard-hint">[1]</small>
-                        </button>
-                        <button class="btn btn-outline-warning py-3" @click="rateCard('fuzzy')">
-                            模糊 <br><small class="keyboard-hint">[2]</small>
-                        </button>
-                        <button class="btn btn-outline-success py-3" @click="rateCard('good')">
-                            好 <br><small class="keyboard-hint">[3]</small>
-                        </button>
-                        <button class="btn btn-outline-info py-3" @click="rateCard('easy')">
-                            簡單 <br><small class="keyboard-hint">[4]</small>
-                        </button>
+                    <div v-else>
+                        <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 mb-3">
+                            <span class="badge bg-danger rounded-pill py-2 px-3 shadow-sm border border-light">❌ 忘記: {{ currentCard.reviewStats.forgot }}</span>
+                            <span class="badge bg-warning rounded-pill py-2 px-3 shadow-sm border border-light text-dark">⚠️ 模糊: {{ currentCard.reviewStats.fuzzy }}</span>
+                            <span class="badge bg-success rounded-pill py-2 px-3 shadow-sm border border-light">👍 好: {{ currentCard.reviewStats.good }}</span>
+                            <span class="badge bg-info rounded-pill py-2 px-3 shadow-sm border border-light text-dark">✨ 簡單: {{ currentCard.reviewStats.easy }}</span>
+                            
+                            <button class="btn btn-sm btn-outline-secondary rounded-pill ms-md-3 shadow-sm" @click="openEditModal(currentCard, null)">
+                                ✏️ 修改此題
+                            </button>
+                        </div>
+
+                        <div class="btn-group w-100 shadow-sm" role="group">
+                            <button class="btn btn-outline-danger py-3" @click="rateCard('forgot')">
+                                忘記 <br><small class="keyboard-hint">[1]</small>
+                            </button>
+                            <button class="btn btn-outline-warning py-3" @click="rateCard('fuzzy')">
+                                模糊 <br><small class="keyboard-hint">[2]</small>
+                            </button>
+                            <button class="btn btn-outline-success py-3" @click="rateCard('good')">
+                                好 <br><small class="keyboard-hint">[3]</small>
+                            </button>
+                            <button class="btn btn-outline-info py-3" @click="rateCard('easy')">
+                                簡單 <br><small class="keyboard-hint">[4]</small>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -176,36 +216,80 @@
             </div>
         </div>
         
-        <div class="col-md-8 text-center" v-else>
+        <div class="col-md-8" v-else>
             <div class="card p-4 shadow-sm border-0">
-                <h4 class="mb-4">🎯 調整練習條件</h4>
+                <h4 class="mb-4 text-center">🎯 調整練習條件 ({{ deckName }})</h4>
                 
-                <div class="mb-3 d-flex justify-content-center align-items-center gap-2">
-                    <label class="form-label mb-0 fw-bold" style="white-space: nowrap; width: 120px;">選擇練習題數：</label>
-                    <select class="form-select w-50" v-model="practiceCountLimit">
-                        <option value="all">全部題目 (共 {{ cards.length }} 題)</option>
-                        <option value="10">隨機抽 10 題</option>
-                        <option value="20">隨機抽 20 題</option>
-                        <option value="40">隨機抽 40 題</option>
-                        <option value="50">隨機抽 50 題</option>
-                    </select>
+                <div class="mb-4">
+                    <label class="form-label fw-bold">1. 選擇練習題數：</label>
+                    <div class="d-flex flex-wrap gap-3 align-items-center bg-light p-3 rounded border">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="all" id="countAll">
+                            <label class="form-check-label" for="countAll">全部 (共 {{ cards.length }} 題)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="10" id="count10">
+                            <label class="form-check-label" for="count10">10 題</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="20" id="count20">
+                            <label class="form-check-label" for="count20">20 題</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="40" id="count40">
+                            <label class="form-check-label" for="count40">40 題</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="50" id="count50">
+                            <label class="form-check-label" for="count50">50 題</label>
+                        </div>
+                        <div class="form-check d-flex align-items-center gap-2">
+                            <input class="form-check-input" type="radio" v-model="practiceCountMode" value="custom" id="countCustom">
+                            <label class="form-check-label" for="countCustom">自訂：</label>
+                            <input type="number" class="form-control form-control-sm" style="width: 80px;" 
+                                   v-model.number="practiceCustomCount" 
+                                   :disabled="practiceCountMode !== 'custom'" min="1" max="9999">
+                        </div>
+                    </div>
                 </div>
 
-                <div class="mb-4 d-flex justify-content-center align-items-center gap-2">
-                    <label class="form-label mb-0 fw-bold" style="white-space: nowrap; width: 120px;">篩選評分項目：</label>
-                    <select class="form-select w-50" v-model="practiceRatingFilter">
-                        <option value="all">不限狀態 (全部包含)</option>
-                        <option value="unrated">尚未練習的題目</option>
-                        <option value="forgot">上次評分：忘記 ❌</option>
-                        <option value="fuzzy">上次評分：模糊 ⚠️</option>
-                        <option value="good">上次評分：好  👍</option>
-                        <option value="easy">上次評分：簡單 ✨</option>
-                    </select>
+                <div class="mb-4">
+                    <label class="form-label fw-bold">2. 篩選題型狀態 (可複選)：</label>
+                    <div class="btn-group w-100 shadow-sm" role="group">
+                        <input type="checkbox" class="btn-check" id="chk-unrated" value="unrated" v-model="practiceRatingFilter">
+                        <label class="btn btn-outline-secondary" for="chk-unrated">🆕 未練習</label>
+                        
+                        <input type="checkbox" class="btn-check" id="chk-forgot" value="forgot" v-model="practiceRatingFilter">
+                        <label class="btn btn-outline-danger" for="chk-forgot">❌ 忘記</label>
+
+                        <input type="checkbox" class="btn-check" id="chk-fuzzy" value="fuzzy" v-model="practiceRatingFilter">
+                        <label class="btn btn-outline-warning" for="chk-fuzzy">⚠️ 模糊</label>
+
+                        <input type="checkbox" class="btn-check" id="chk-good" value="good" v-model="practiceRatingFilter">
+                        <label class="btn btn-outline-success" for="chk-good">👍 好</label>
+
+                        <input type="checkbox" class="btn-check" id="chk-easy" value="easy" v-model="practiceRatingFilter">
+                        <label class="btn btn-outline-info" for="chk-easy">✨ 簡單</label>
+                    </div>
                 </div>
 
-                <button class="btn btn-primary btn-lg w-50 mx-auto" @click="initPractice">
-                    🚀 開始練習
-                </button>
+                <div class="mb-5">
+                    <label class="form-label fw-bold">3. 針對重點複習：</label>
+                    <div class="bg-light p-3 rounded border">
+                        <div class="form-check form-switch fs-5">
+                            <input class="form-check-input" type="checkbox" role="switch" id="switchImportant" v-model="practiceImportantOnly">
+                            <label class="form-check-label text-warning fw-bold" for="switchImportant">
+                                ⭐ 僅抽取被標記為「重點」的字卡
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    <button class="btn btn-primary btn-lg w-50" @click="initPractice">
+                        🚀 開始練習
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -214,7 +298,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">{{ editingCard.id ? '編輯字卡' : '新增字卡' }}</h5>
+                    <h5 class="modal-title">{{ editingCard.id ? '編輯字卡' : (pendingInsertIndex !== null ? '插入新字卡' : '新增字卡') }}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -245,7 +329,7 @@
 
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" v-model="editingCard.isImportant" id="isImportantCheck">
-                        <label class="form-check-label text-warning fw-bold" for="isImportantCheck">標記為重點題目 (V)</label>
+                        <label class="form-check-label text-warning fw-bold" for="isImportantCheck">標記為重點題目 (⭐)</label>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -268,6 +352,7 @@ createApp({
         // 全域狀態
         const currentView = ref('home');
         const cards = ref([]);
+        const deckName = ref('未命名題庫');
         const alertMessage = ref('');
         const fileInput = ref(null);
         let editModalInstance = null;
@@ -275,19 +360,24 @@ createApp({
 
         // 練習與篩選狀態
         const practiceQueue = ref([]);
+        const queueStates = ref([]); // 解決雙擊左鍵 Bug：將每一題的狀態（翻牌/評分）陣列化獨立儲存
         const currentIndex = ref(0);
-        const isFlipped = ref(false);
-        const hasRated = ref(false);
         const isPracticeFinished = ref(false);
-        const practiceCountLimit = ref('all');
-        const practiceRatingFilter = ref('all');
+        
+        // 練習條件設定
+        const practiceCountMode = ref('all');
+        const practiceCustomCount = ref(15);
+        const practiceRatingFilter = ref(['unrated', 'forgot', 'fuzzy', 'good', 'easy']);
+        const practiceImportantOnly = ref(false);
 
-        // 編輯狀態
+        // 編輯狀態 (加入 pendingInsertIndex 用於上下方插入)
         const editingCard = reactive({ id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
+        const pendingInsertIndex = ref(null);
 
         // 計算屬性
         const importantCount = computed(() => cards.value.filter(c => c.isImportant).length);
         const currentCard = computed(() => practiceQueue.value[currentIndex.value] || null);
+        const currentCardState = computed(() => queueStates.value[currentIndex.value] || { isFlipped: false, hasRated: false });
         
         // 渲染遮罩與 HTML 轉義防 XSS
         const escapeHTML = (str) => {
@@ -301,12 +391,13 @@ createApp({
             const front = currentCard.value.front || '';
             const backArr = currentCard.value.backArray || [];
             const parts = front.split('___');
+            const state = currentCardState.value; // 取出當下題目的翻牌狀態
             let html = '';
             
             for (let i = 0; i < parts.length; i++) {
                 html += escapeHTML(parts[i]);
                 if (i < parts.length - 1) {
-                    if (!isFlipped.value) {
+                    if (!state.isFlipped) {
                         html += '<span class="badge bg-secondary cloze-badge mx-1 shadow-sm"><i class="bi bi-question">?</i></span>';
                     } else {
                         const ans = backArr[i] || '無對應答案';
@@ -354,7 +445,7 @@ createApp({
             }
         });
 
-        // --- 檔案處理 ---
+        // --- 檔案處理 (整合題庫名稱匯入/匯出) ---
         const parseCSVString = (str) => {
             const result = [];
             let row = [], col = '', inQuotes = false;
@@ -381,6 +472,7 @@ createApp({
                 if (file.name.endsWith('.json')) {
                     try {
                         const data = JSON.parse(content);
+                        if (data.deckName) deckName.value = data.deckName; // 讀取題庫名稱
                         if (data.cards) {
                             cards.value = data.cards;
                             nextTick(() => updateChart());
@@ -410,79 +502,90 @@ createApp({
         };
 
         const exportJSON = () => {
-            const data = { systemVersion: "1.0.2", exportAt: new Date().toISOString(), cards: cards.value };
+            // 加入題庫名稱 deckName
+            const data = { systemVersion: "1.0.4", deckName: deckName.value, exportAt: new Date().toISOString(), cards: cards.value };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `flashcards_${new Date().getTime()}.json`;
-            a.click(); URL.revokeObjectURL(url);
+            a.href = url; 
+            // 檔名結合題庫名稱
+            const safeDeckName = deckName.value.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '');
+            a.download = `${safeDeckName || 'flashcards'}_${new Date().getTime()}.json`;
+            a.click(); 
+            URL.revokeObjectURL(url);
         };
 
-        // --- 練習與控制邏輯 ---
+        // --- 練習與控制邏輯 (徹底解決連點左鍵 Bug) ---
         const resetToSetup = () => {
             practiceQueue.value = [];
+            queueStates.value = [];
             isPracticeFinished.value = false;
         };
 
         const initPractice = () => {
             if (cards.value.length === 0) return;
-            isPracticeFinished.value = false;
+            if (practiceRatingFilter.value.length === 0) return alert("請至少選擇一種題型狀態！");
             
             let filteredCards = [...cards.value];
-            if (practiceRatingFilter.value !== 'all') {
-                if (practiceRatingFilter.value === 'unrated') filteredCards = filteredCards.filter(c => c.lastRating === null);
-                else filteredCards = filteredCards.filter(c => c.lastRating === practiceRatingFilter.value);
-            }
+            if (practiceImportantOnly.value) filteredCards = filteredCards.filter(c => c.isImportant);
+            filteredCards = filteredCards.filter(c => practiceRatingFilter.value.includes(c.lastRating === null ? 'unrated' : c.lastRating));
 
-            if (filteredCards.length === 0) {
-                alert("找不到符合該評分條件的字卡，請重新選擇！");
-                return;
-            }
+            if (filteredCards.length === 0) return alert("找不到符合條件的字卡，請放寬篩選條件！");
             
             for (let i = filteredCards.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [filteredCards[i], filteredCards[j]] = [filteredCards[j], filteredCards[i]];
             }
 
-            if (practiceCountLimit.value !== 'all') {
-                filteredCards = filteredCards.slice(0, parseInt(practiceCountLimit.value, 10));
+            if (practiceCountMode.value !== 'all') {
+                let limit = practiceCountMode.value === 'custom' ? (practiceCustomCount.value || 1) : parseInt(practiceCountMode.value, 10);
+                filteredCards = filteredCards.slice(0, limit);
             }
 
+            // 初始化佇列與對應的狀態陣列
             practiceQueue.value = filteredCards;
+            queueStates.value = filteredCards.map(() => ({ isFlipped: false, hasRated: false }));
             currentIndex.value = 0;
-            isFlipped.value = false;
-            hasRated.value = false;
+            isPracticeFinished.value = false;
         };
 
         const flipCard = () => {
-            if (!isFlipped.value) { isFlipped.value = true; hasRated.value = false; }
+            if (!queueStates.value[currentIndex.value].isFlipped) { 
+                queueStates.value[currentIndex.value].isFlipped = true; 
+            }
         };
 
         const rateCard = (rating) => {
-            if (!isFlipped.value || !currentCard.value) return;
+            const state = queueStates.value[currentIndex.value];
+            if (!state.isFlipped || !currentCard.value) return;
+            
             const cardInDB = cards.value.find(c => c.id === currentCard.value.id);
             if (cardInDB) {
                 cardInDB.reviewStats[rating]++;
                 cardInDB.lastRating = rating;
             }
-            hasRated.value = true;
+            state.hasRated = true; // 紀錄該題在本次練習中已經評分
             nextCard();
         };
 
         const nextCard = () => {
-            if (!isFlipped.value) return showAlert("尚未完成 (請先翻牌)");
-            if (!hasRated.value) return showAlert("請先進行評分");
+            const state = queueStates.value[currentIndex.value];
+            if (!state.isFlipped) return showAlert("尚未完成 (請先翻牌)");
+            if (!state.hasRated) return showAlert("請先進行評分");
+            
             if (currentIndex.value < practiceQueue.value.length - 1) {
-                currentIndex.value++; isFlipped.value = false; hasRated.value = false;
+                currentIndex.value++; 
             } else {
-                isPracticeFinished.value = true;
+                // 檢查是否全部題目都評分過
+                if (queueStates.value.every(s => s.hasRated)) {
+                    isPracticeFinished.value = true;
+                }
             }
         };
 
         const prevCard = () => {
-            if (currentIndex.value > 0) {
-                currentIndex.value--; isFlipped.value = true; hasRated.value = true; 
-            }
+            // 回到上一題時，由於該題的 queueStates 狀態已經是 flipped / rated = true，因此不會被重置
+            if (currentIndex.value > 0) currentIndex.value--; 
         };
 
         const handleKeydown = (e) => {
@@ -493,27 +596,44 @@ createApp({
                 case ' ': case 'Spacebar': e.preventDefault(); flipCard(); break;
                 case 'ArrowRight': nextCard(); break;
                 case 'ArrowLeft': prevCard(); break;
-                case '1': if (isFlipped.value) rateCard('forgot'); break;
-                case '2': if (isFlipped.value) rateCard('fuzzy'); break;
-                case '3': if (isFlipped.value) rateCard('good'); break;
-                case '4': if (isFlipped.value) rateCard('easy'); break;
+                case '1': if (currentCardState.value.isFlipped) rateCard('forgot'); break;
+                case '2': if (currentCardState.value.isFlipped) rateCard('fuzzy'); break;
+                case '3': if (currentCardState.value.isFlipped) rateCard('good'); break;
+                case '4': if (currentCardState.value.isFlipped) rateCard('easy'); break;
             }
         };
 
-        // --- CRUD 邏輯 ---
-        const openEditModal = (card) => {
-            if (card) Object.assign(editingCard, JSON.parse(JSON.stringify(card)));
-            else Object.assign(editingCard, { id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
+        // --- CRUD 邏輯 (整合上下方插入與練習時即時修改) ---
+        const openEditModal = (card, insertIndex = null) => {
+            pendingInsertIndex.value = insertIndex; // 紀錄使用者想插入的位置 (若為 null 則代表編輯或推至最底)
+            if (card) {
+                Object.assign(editingCard, JSON.parse(JSON.stringify(card)));
+            } else {
+                Object.assign(editingCard, { id: null, front: '', backArray: [], isImportant: false, reviewStats: { forgot: 0, fuzzy: 0, good: 0, easy: 0 }, lastRating: null });
+            }
             editModalInstance.show();
         };
 
         const saveCard = () => {
+            const savedData = JSON.parse(JSON.stringify(editingCard));
             if (editingCard.id) {
-                const index = cards.value.findIndex(c => c.id === editingCard.id);
-                if (index !== -1) cards.value[index] = JSON.parse(JSON.stringify(editingCard));
+                // 編輯模式：更新總題庫
+                const dbIndex = cards.value.findIndex(c => c.id === editingCard.id);
+                if (dbIndex !== -1) cards.value[dbIndex] = savedData;
+                
+                // 若在練習模式中修改，同步更新練習佇列 (即時生效)
+                const qIndex = practiceQueue.value.findIndex(c => c.id === editingCard.id);
+                if (qIndex !== -1) practiceQueue.value[qIndex] = savedData;
             } else {
-                editingCard.id = 'card_' + Date.now();
-                cards.value.push(JSON.parse(JSON.stringify(editingCard)));
+                // 新增模式
+                savedData.id = 'card_' + Date.now();
+                if (pendingInsertIndex.value !== null) {
+                    // 於指定位置插入
+                    cards.value.splice(pendingInsertIndex.value, 0, savedData);
+                } else {
+                    // 推至最底
+                    cards.value.push(savedData);
+                }
             }
             editModalInstance.hide();
         };
@@ -551,8 +671,8 @@ createApp({
         onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
         return {
-            currentView, cards, practiceQueue, currentIndex, isFlipped, alertMessage, importantCount, currentCard, renderedCardContent, editingCard, fileInput,
-            isPracticeFinished, practiceCountLimit, practiceRatingFilter,
+            currentView, cards, deckName, practiceQueue, currentIndex, currentCardState, alertMessage, importantCount, currentCard, renderedCardContent, editingCard, fileInput,
+            isPracticeFinished, practiceCountMode, practiceCustomCount, practiceRatingFilter, practiceImportantOnly, pendingInsertIndex,
             handleFileUpload, exportJSON, initPractice, flipCard, rateCard, openEditModal, saveCard, deleteCard, removeAnswer, createCloze, resetToSetup
         };
     }
